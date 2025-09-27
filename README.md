@@ -8,8 +8,9 @@ security-critical code can be audited and unit tested independently.
 
 ## Features
 
-- **Strong encryption** – AES-256-GCM with PBKDF2-HMAC key derivation and a
-  configurable work factor.
+- **Strong encryption** – AES-256-GCM with Argon2id key derivation by default
+  (PBKDF2-HMAC remains available for compatibility) and a configurable work
+  factor.
 - **Mnemonic workflow** – generates 24-word recovery phrases using the
   `mnemonic` library and exposes checksum helpers.
 - **QR interoperability** – save encrypted payloads as QR code images when
