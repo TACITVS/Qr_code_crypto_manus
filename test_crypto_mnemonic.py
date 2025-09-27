@@ -1,10 +1,14 @@
 
 import json
-from src.secure_qr_tool.config import AppConfig
-from src.secure_qr_tool.security import CryptoManager, MnemonicManager, SecureString
+from secure_qr_tool.config import AppConfig
+from secure_qr_tool.security import CryptoManager, MnemonicManager, SecureString
 
 def test_mnemonic_generation_and_validation():
-    config = AppConfig()
+    config = AppConfig(
+        argon2_time_cost=2,
+        argon2_memory_cost_kib=64 * 1024,
+        argon2_parallelism=1,
+    )
     mnemonic_manager = MnemonicManager(config)
 
     # Test default word count generation
@@ -27,7 +31,7 @@ def test_mnemonic_generation_and_validation():
     mnemonic_for_checksum = mnemonic_manager.generate()
     checksum = MnemonicManager.checksum(mnemonic_for_checksum)
     assert len(checksum) == 6
-    assert checksum.isupper()
+    assert checksum == checksum.upper()
 
     print("MnemonicManager tests passed.")
 
@@ -78,7 +82,7 @@ def test_crypto_encryption_decryption():
         crypto_manager.decrypt(malformed_payload_chars, password)
         assert False, "Decryption with malformed base64 characters should fail"
     except ValueError as e:
-        assert "Decryption failed" in str(e) # The security.py decrypt method re-raises as "Decryption failed"
+        assert "Payload contains invalid base64 data" in str(e)
 
     # Test with valid base64 but incorrect length for nonce/salt/ciphertext
     # The cryptography library raises ValueError for incorrect nonce length

@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Dict
 
+from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -72,16 +73,41 @@ class CryptoManager:
     config: AppConfig
 
     def _derive_key(self, password: SecureString, salt: bytes) -> bytes:
-        """Derive an AES key from ``password`` using PBKDF2."""
+        """Derive an AES key from ``password`` using the configured KDF."""
 
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=self.config.aes_key_size_bytes,
-            salt=salt,
-            iterations=self.config.pbkdf2_iterations,
-            backend=default_backend(),
+        if self.config.kdf.lower() == "argon2id":
+            return hash_secret_raw(
+                secret=password.get_bytes(),
+                salt=salt,
+                time_cost=self.config.argon2_time_cost,
+                memory_cost=self.config.argon2_memory_cost_kib,
+                parallelism=self.config.argon2_parallelism,
+                hash_len=self.config.aes_key_size_bytes,
+                type=Type.ID,
+            )
+
+        if self.config.kdf.lower() == "pbkdf2":
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=self.config.aes_key_size_bytes,
+                salt=salt,
+                iterations=self.config.pbkdf2_iterations,
+                backend=default_backend(),
+            )
+            return kdf.derive(password.get_bytes())
+
+        raise ValueError(f"Unsupported KDF: {self.config.kdf}")
+
+    def _build_aad(self) -> bytes:
+        """Return the associated data bound into the AEAD payload."""
+
+        aad_parts = (
+            self.config.app_name,
+            self.config.app_version,
+            self.config.kdf.lower(),
+            "aes-256-gcm",
         )
-        return kdf.derive(password.get_bytes())
+        return "|".join(aad_parts).encode("utf-8")
 
     def encrypt(self, data: SecureString, password: SecureString) -> Dict[str, str]:
         """Encrypt ``data`` using AES-256-GCM.
@@ -94,7 +120,7 @@ class CryptoManager:
         key = self._derive_key(password, salt)
         aesgcm = AESGCM(key)
         nonce = os.urandom(12)
-        ciphertext = aesgcm.encrypt(nonce, data.get_bytes(), None)
+        ciphertext = aesgcm.encrypt(nonce, data.get_bytes(), self._build_aad())
 
         return {
             "salt": base64.b64encode(salt).decode("ascii"),
@@ -112,17 +138,20 @@ class CryptoManager:
             raise ValueError(f"Invalid payload, missing fields: {sorted(missing)}")
 
         try:
-            salt = base64.b64decode(payload["salt"])
-            nonce = base64.b64decode(payload["nonce"])
-            ciphertext = base64.b64decode(payload["ciphertext"])
+            salt = base64.b64decode(payload["salt"], validate=True)
+            nonce = base64.b64decode(payload["nonce"], validate=True)
+            ciphertext = base64.b64decode(payload["ciphertext"], validate=True)
         except (TypeError, binascii.Error) as exc:
             raise ValueError("Payload contains invalid base64 data") from exc
+
+        if len(salt) < self.config.salt_size_bytes:
+            raise ValueError("Payload contains an invalid salt length")
 
         key = self._derive_key(password, salt)
         aesgcm = AESGCM(key)
 
         try:
-            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+            plaintext = aesgcm.decrypt(nonce, ciphertext, self._build_aad())
         except Exception as exc:  # pragma: no cover - depends on ciphertext
             raise ValueError("Decryption failed") from exc
 

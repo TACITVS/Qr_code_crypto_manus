@@ -1,5 +1,5 @@
 
-from src.secure_qr_tool.security import SecureString
+from secure_qr_tool.security import SecureString
 
 def test_secure_string_wiping():
     s = SecureString("sensitive_data")

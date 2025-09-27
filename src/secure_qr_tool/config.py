@@ -12,7 +12,11 @@ class AppConfig:
     app_name: str = "SecureQRCodeTool"
     app_version: str = "3.0"
     min_password_length: int = 12
+    kdf: str = "argon2id"
     pbkdf2_iterations: int = 600_000
+    argon2_time_cost: int = 4
+    argon2_memory_cost_kib: int = 256 * 1024
+    argon2_parallelism: int = 2
     salt_size_bytes: int = 16
     aes_key_size_bytes: int = 32
     mnemonic_default_words: int = 24
